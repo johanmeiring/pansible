@@ -1,0 +1,4 @@
+*.sublime*
+*.hosts
+group_vars/all
+files/

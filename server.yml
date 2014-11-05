@@ -1,0 +1,121 @@
+---
+- name: "@johanmeiring's basic Ubuntu server config playbook"
+  hosts: all
+  sudo: yes
+  tasks:
+    # =============================================================================
+    # Tag: upgrade-packages
+    # Description: apt-get update && apt-get dist-upgrade
+    # =============================================================================
+    - name: upgrade-packages | Update apt package cache
+      apt: update_cache=yes
+      tags: upgrade-packages
+
+    - name: upgrade-packages | Upgrade upgrade-packages
+      apt: upgrade=safe
+      tags: upgrade-packages
+
+
+    # =============================================================================
+    # Tag: fix-locale
+    # Description: Some update at some point in Ubuntu 12.04's history broke
+    #              locales, resulting in hugely annoying behaviour in terminal
+    #              sessions. Let's fix it.
+    # =============================================================================
+    - name: fix-locale | Fix locale
+      lineinfile: dest=/etc/environment line='{{ item }}' state=present
+      with_items:
+        - LC_ALL={{ locale }}
+        - LANG={{ locale }}
+      tags: fix-locale
+
+
+    # =============================================================================
+    # Tag: install-ntp
+    # Description: Install NTP on all nodes so that we have consistent clocks.
+    # =============================================================================
+    - name: install-ntp | Install ntp
+      apt: pkg=ntp update_cache=true state=present
+      tags: install-ntp
+
+    - name: install-ntp | Start ntp
+      service: name=ntp state=started enabled=true
+      tags: install-ntp
+
+
+    # =============================================================================
+    # Tag: install-misc
+    # Description: Install misc software that I always use.
+    # =============================================================================
+    - name: install-misc | Install misc packages
+      apt: pkg={{ item }} update_cache=true state=present
+      with_items: packages
+      tags: install-misc
+
+
+    # =============================================================================
+    # Tag: create-users
+    # Description: Create user accounts. This includes allowing passwordless sudo
+    # and adding of public keys.
+    # =============================================================================
+    - name: create-users | Allow passwordless sudo
+      lineinfile: "dest=/etc/sudoers
+                  state=present
+                  regexp='^%sudo'
+                  line='%sudo ALL=(ALL:ALL) NOPASSWD: ALL'
+                  validate='visudo -cf %s'"
+      tags: create-users
+
+    - name: create-users | Create users
+      user: name={{ item.name }}
+            groups=adm,sudo
+            shell=/bin/bash
+            state=present
+      with_items: users
+      tags: create-users
+
+    - name: create-users | Force colour prompt for users
+      lineinfile: dest=/home/{{ item.name }}/.bashrc
+                  regexp='^.*force_color_prompt='
+                  line='force_color_prompt=yes'
+      with_items: users
+      tags: create-users
+
+    - name: create-users | Install keys
+      authorized_key: user={{ item.0.name }} key='{{ lookup('file', item.1) }}'
+      with_subelements:
+        - users
+        - authorized
+      tags: create-users
+
+
+    # =============================================================================
+    # Tag: tweak-ssh
+    # Description: Tweak SSH daemon to disallow SSH access for the root user,
+    #              and also to disallow password-based logins.
+    # =============================================================================
+    # - name: tweak-ssh | Disallow root SSH access and general password login
+    #   lineinfile: "dest=/etc/ssh/sshd_config regexp='{{ item.regexp }}' line='{{ item.line }}' state=present"
+    #   with_items:
+    #     - { regexp: '^PermitRootLogin', line: 'PermitRootLogin no' }
+    #     - { regexp: '^.*PasswordAuthentication (yes|no)', line: 'PasswordAuthentication no' }
+    #   tags: tweak-ssh
+    #
+    # - name: tweak-ssh | Restart SSH
+    #   service: name=ssh state=restarted
+    #   tags: tweak-ssh
+
+
+    # =============================================================================
+    # Tag: reboot-server
+    # Description: Check if server needs to be rebooted, and reboot it.
+    # =============================================================================
+    - name: reboot-server | Check if reboot is required
+      register: reboot_required
+      file: path=/var/run/reboot-required
+      tags: reboot-server
+
+    - name: reboot-server | Reboot server
+      shell: /sbin/reboot
+      when: reboot_required.state == 'file'
+      tags: reboot-server

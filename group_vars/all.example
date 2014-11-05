@@ -1,0 +1,13 @@
+---
+users:
+  - name: johan
+    authorized:
+      - files/johan.pub
+
+locale: en_ZA.UTF-8
+
+packages:
+  - aptitude
+  - vim-nox
+  - build-essential
+  - zip
